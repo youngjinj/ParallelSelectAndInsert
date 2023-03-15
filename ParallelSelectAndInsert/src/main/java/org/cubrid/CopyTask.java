@@ -1,5 +1,6 @@
 package org.cubrid;
 
+import java.sql.BatchUpdateException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -12,33 +13,46 @@ import java.util.logging.Logger;
 public class CopyTask implements Callable<Long> {
 	private static final Logger LOGGER = Logger.getLogger(CopyTask.class.getName());
 
+	private String currentThreadName;
+
 	private final Connection sourceConnection;
 	private final Connection targetConnection;
 	private final String sourceTableName;
+	private final String sourceIndexColumnName;
 	private final long offset;
 	private final long rowCount;
 	private final String targetTableName;
 
-	private long insertCount;
+	private int batchCount;
+	private long addBatchCount;
+	private long executeBatchCount;
 
-	public CopyTask(Connection sourceConnection, Connection targetConnection, String sourceTableName, long offset,
-			long rowCount, String targetTableName) {
+	public CopyTask(Connection sourceConnection, Connection targetConnection, String sourceTableName,
+			String sourceIndexColumnName, long offset, long rowCount, String targetTableName) {
 		this.sourceConnection = sourceConnection;
 		this.targetConnection = targetConnection;
 		this.sourceTableName = sourceTableName;
+		this.sourceIndexColumnName = sourceIndexColumnName;
 		this.offset = offset;
 		this.rowCount = rowCount;
 		this.targetTableName = targetTableName;
 
-		this.insertCount = 0;
+		this.batchCount = ParallelSelectAndInsert.DEFAULT_BATCH_COUNT;
+		this.addBatchCount = 0;
+		this.executeBatchCount = 0;
 	}
 
 	@Override
 	public Long call() {
-		// String selectQuery = CUBRIDConnectionManager.getSelectQuery(sourceTableName);
+		this.currentThreadName = Thread.currentThread().getName();
+		LOGGER.log(Level.INFO, String.format("[%s] Starting copy task thread.", currentThreadName));
 
-		String sourceColumnName = "c1";
-		String selectQuery = CUBRIDConnectionManager.getSelectQueryUsingIndex(sourceTableName, sourceColumnName);
+		String selectQuery = null;
+		if (sourceIndexColumnName != null) {
+			selectQuery = CUBRIDConnectionManager.getSelectQueryUsingIndex(sourceTableName, sourceIndexColumnName);
+		} else {
+			selectQuery = CUBRIDConnectionManager.getSelectQuery(sourceTableName);
+		}
 
 		try (PreparedStatement sourceStatement = sourceConnection.prepareStatement(selectQuery)) {
 			sourceStatement.setLong(1, offset);
@@ -51,32 +65,68 @@ public class CopyTask implements Callable<Long> {
 				String insertQuery = CUBRIDConnectionManager.getInsertQuery(targetTableName, columnCount);
 
 				try (PreparedStatement targetStatement = targetConnection.prepareStatement(insertQuery)) {
-					while (resultSet.next()) {
-						for (int i = 1; i <= columnCount; i++) {
-							targetStatement.setObject(i, resultSet.getObject(i));
-						}
-						targetStatement.addBatch();
-						insertCount++;
+					try {
+						while (resultSet.next()) {
+							for (int i = 1; i <= columnCount; i++) {
+								targetStatement.setObject(i, resultSet.getObject(i));
+							}
+							targetStatement.addBatch();
+							addBatchCount++;
 
-						if (insertCount % 1000 == 0) {
-							targetStatement.executeBatch();
+							if (addBatchCount == batchCount) {
+								try {
+									targetStatement.executeBatch();
+									LOGGER.log(Level.INFO,
+											String.format("[%s] Inserted %d rows", currentThreadName, addBatchCount));
+
+									executeBatchCount += addBatchCount;
+									addBatchCount = 0;
+								} catch (BatchUpdateException e) {
+									LOGGER.log(Level.SEVERE,
+											String.format("[%s] Failed to execute batch for target connection",
+													currentThreadName),
+											e);
+									return new Long(-1);
+								}
+							}
 						}
+					} catch (SQLException e) {
+						LOGGER.log(Level.SEVERE,
+								String.format("[%s] Failed to get data for source connection", currentThreadName), e);
+						Thread.currentThread().interrupt();
+						return new Long(-1);
 					}
 
-					if (insertCount % 1000 != 0) {
-						targetStatement.executeBatch();
+					if (addBatchCount != 0) {
+						try {
+							targetStatement.executeBatch();
+							LOGGER.log(Level.INFO,
+									String.format("[%s] Inserted %d rows", currentThreadName, addBatchCount));
+
+							executeBatchCount += addBatchCount;
+						} catch (BatchUpdateException e) {
+							LOGGER.log(Level.SEVERE, String.format("[%s] Failed to execute batch for target connection",
+									currentThreadName), e);
+							return new Long(-1);
+						}
 					}
 				} catch (SQLException e) {
-					LOGGER.log(Level.SEVERE,
-							"Failed to create prepared statement or execute batch for target connection", e);
+					LOGGER.log(Level.SEVERE, String.format(
+							"[%s] Failed to create prepared statement for target connection", currentThreadName), e);
+					return new Long(-1);
 				}
 			} catch (SQLException e) {
-				LOGGER.log(Level.SEVERE, "Failed to execute query for source connection", e);
+				LOGGER.log(Level.SEVERE,
+						String.format("[%s] Failed to execute query for source connection", currentThreadName), e);
+				return new Long(-1);
 			}
 		} catch (SQLException e) {
-			LOGGER.log(Level.SEVERE, "Failed to create prepared statement for source connection", e);
+			LOGGER.log(Level.SEVERE,
+					String.format("[%s] Failed to create prepared statement for source connection", currentThreadName),
+					e);
+			return new Long(-1);
 		}
 
-		return new Long(insertCount);
+		return new Long(executeBatchCount);
 	}
 }
