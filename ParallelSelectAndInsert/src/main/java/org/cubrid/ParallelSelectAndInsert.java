@@ -99,7 +99,6 @@ public class ParallelSelectAndInsert {
 				LOGGER.log(Level.WARNING, "No data to copy");
 				return;
 			}
-			rowCount = 100000;
 			long rowCountPerThread = rowCount / numThreads;
 			long rowCountRemain = rowCount % numThreads;
 			
