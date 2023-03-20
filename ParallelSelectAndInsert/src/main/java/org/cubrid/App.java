@@ -70,8 +70,8 @@ public class App {
 			if (command.hasOption("t")) {
 				try {
 					numThreads = Integer.parseInt(command.getOptionValue("t"));
-					
-					/**
+
+					/*-
 					 * Retrieves the number of available logical CPU cores, 
 					 * limiting the count to a maximum of half the total if hyper-threading is enabled.
 					 */
@@ -81,6 +81,9 @@ public class App {
 					}
 
 					if (numThreads > availableProcessors) {
+						LOGGER.log(Level.WARNING,
+								String.format("Setting thread count to %s exceeds the number of available processors",
+										availableProcessors));
 						numThreads = availableProcessors;
 					}
 				} catch (NumberFormatException e) {

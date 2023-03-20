@@ -12,6 +12,7 @@ public class CopyTaskInfo {
 	private Connection destinationConnection;
 	private String destinationTableName;
 	private int batchCount;
+	
 	private ProgressBarTask progressBar;
 	
 	public int getThreadNum() {

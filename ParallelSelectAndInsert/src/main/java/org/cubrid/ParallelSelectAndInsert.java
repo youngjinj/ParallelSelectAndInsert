@@ -84,6 +84,7 @@ public class ParallelSelectAndInsert {
 		assert (sourceTableName != null);
 		assert (destinationTableName != null);
 		assert (numThreads > 0);
+		assert (progressBar != null);
 
 		try (Connection sourceConnection = manager.getSourceConnection()) {
 			assert (sourceConnection != null);
@@ -97,7 +98,7 @@ public class ParallelSelectAndInsert {
 				return;
 			}
 			long rowCountPerThread = rowCount / numThreads;
-			long rowCountRemain = rowCount % numThreads;
+			long remainRowCount = rowCount % numThreads;
 			
 			progressBar.setTotalOfMain(rowCount);
 
@@ -128,8 +129,8 @@ public class ParallelSelectAndInsert {
 				}
 
 				if (i == (numThreads - 1)) {
-					copyTaskInfo.setRowCount(rowCountPerThread + rowCountRemain);
-					progressBar.setTotalPerThread(i, rowCountPerThread + rowCountRemain);
+					copyTaskInfo.setRowCount(rowCountPerThread + remainRowCount);
+					progressBar.setTotalPerThread(i, rowCountPerThread + remainRowCount);
 				} else {
 					copyTaskInfo.setRowCount(rowCountPerThread);
 					progressBar.setTotalPerThread(i, rowCountPerThread);
@@ -160,22 +161,18 @@ public class ParallelSelectAndInsert {
 			}
 			
 			Thread.sleep(1000);
+			
+			/* Because it is a select query, no commit is required. */
+			sourceConnection.rollback();
 
 			endXAResources();
 			closeXAResources();
 			
 			executorService.shutdown();
 
-			/* Because it is a select query, no commit is required. */
-			sourceConnection.rollback();
-
 			return;
 		} catch (Exception e) {
 			e.printStackTrace();
-		}
-		
-		if (!executorService.isTerminated()) {
-			executorService.shutdownNow();
 		}
 
 		try {
@@ -185,6 +182,10 @@ public class ParallelSelectAndInsert {
 			e.printStackTrace();
 		} catch (XAException e) {
 			e.printStackTrace();
+		}
+		
+		if (!executorService.isTerminated()) {
+			executorService.shutdownNow();
 		}
 
 		return;
