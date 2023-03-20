@@ -1,5 +1,7 @@
 package org.cubrid;
 
+import java.lang.management.ManagementFactory;
+import java.lang.management.OperatingSystemMXBean;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.ExecutorService;
@@ -70,6 +72,19 @@ public class App {
 			if (command.hasOption("t")) {
 				try {
 					numThreads = Integer.parseInt(command.getOptionValue("t"));
+					
+					/**
+					 * Retrieves the number of available logical CPU cores, 
+					 * limiting the count to a maximum of half the total if hyper-threading is enabled.
+					 */
+					int availableProcessors = Runtime.getRuntime().availableProcessors() / 2;
+					if (availableProcessors == 0) {
+						availableProcessors = 1;
+					}
+
+					if (numThreads > availableProcessors) {
+						numThreads = availableProcessors;
+					}
 				} catch (NumberFormatException e) {
 					LOGGER.log(Level.SEVERE, e.getMessage(), e);
 					return;

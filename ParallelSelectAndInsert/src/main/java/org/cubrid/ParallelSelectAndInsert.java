@@ -12,6 +12,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.IntStream;
 
 import javax.sql.XAConnection;
 import javax.transaction.xa.XAException;
@@ -29,7 +30,6 @@ public class ParallelSelectAndInsert {
 	private String sourceTableName;
 	private String destinationTableName;
 	private int numThreads;
-	private int maxNumThreads;
 	private int batchCount;
 
 	private ProgressBarTask progressBar;
@@ -46,7 +46,6 @@ public class ParallelSelectAndInsert {
 	public ParallelSelectAndInsert() {
 		this.manager = new ConnectionManager();
 		this.xidGenerator = new XidGenerator();
-		this.maxNumThreads = Runtime.getRuntime().availableProcessors();
 		this.batchCount = DEFAULT_BATCH_COUNT;
 	}
 
@@ -69,9 +68,7 @@ public class ParallelSelectAndInsert {
 			destinationTableName = paramSourceTableName;
 		}
 
-		if (paramNumThreads > maxNumThreads) {
-			numThreads = maxNumThreads;
-		} else if (paramNumThreads > 0) {
+		if (paramNumThreads > 0) {
 			numThreads = paramNumThreads;
 		} else {
 			numThreads = 1;
