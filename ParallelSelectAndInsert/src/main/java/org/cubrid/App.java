@@ -1,7 +1,5 @@
 package org.cubrid;
 
-import java.lang.management.ManagementFactory;
-import java.lang.management.OperatingSystemMXBean;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.ExecutorService;
